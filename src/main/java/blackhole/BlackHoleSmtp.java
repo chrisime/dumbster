@@ -1,16 +1,16 @@
-package nirvana;
+package blackhole;
 
 import com.dumbster.smtp.SimpleSmtpServer;
 import com.dumbster.smtp.SmtpMessage;
 
 import java.io.IOException;
 
-public class NirvanaSmtp {
+public class BlackHoleSmtp {
 
     public static void main(String[] args) {
         try (SimpleSmtpServer server = SimpleSmtpServer.start(1025)) {
 
-            System.out.println(NirvanaSmtp.class.getSimpleName() + " is waiting for emails...");
+            System.out.println(BlackHoleSmtp.class.getSimpleName() + " is waiting for emails...");
 
             while (true) {
 
