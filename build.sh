@@ -1,3 +1,3 @@
 #!/usr/bin/env bash
 
-mvn clean install && docker build -t dumbster .
+mvn clean install && docker build -t NirvanaSmtp .

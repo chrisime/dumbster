@@ -14,7 +14,7 @@ public class NirvanaSmtp {
 
             while (true) {
 
-                SmtpMessage smtpMessage = server.RECEIVED_MAIL.poll();
+                SmtpMessage smtpMessage = server.getReceivedEmails().poll();
                 if (smtpMessage != null) {
                     String subject = smtpMessage.getHeaderValue("Subject");
                     String from = smtpMessage.getHeaderValue("From");
