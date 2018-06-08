@@ -55,9 +55,9 @@ public class SimpleSmtpServerTest {
 	public void testSend() throws MessagingException {
 		sendMessage(server.getPort(), "sender@here.com", "Test", "Test Body", "receiver@there.com");
 
-		List<SmtpMessage> emails = server.getReceivedEmails();
+		Queue<SmtpMessage> emails = server.getReceivedEmails();
 		assertThat(emails, hasSize(1));
-		SmtpMessage email = emails.get(0);
+		SmtpMessage email = emails.poll();
 		assertThat(email.getHeaderValue("Subject"), is("Test"));
 		assertThat(email.getBody(), is("Test Body"));
 		assertThat(email.getHeaderNames(), hasItem("Date"));
@@ -85,9 +85,9 @@ public class SimpleSmtpServerTest {
 		String bodyWithCR = "\n\nKeep these pesky carriage returns\n\n";
 		sendMessage(server.getPort(), "sender@hereagain.com", "CRTest", bodyWithCR, "receivingagain@there.com");
 
-		List<SmtpMessage> emails = server.getReceivedEmails();
+		Queue<SmtpMessage> emails = server.getReceivedEmails();
 		assertThat(emails, hasSize(1));
-		SmtpMessage email = emails.get(0);
+		SmtpMessage email = emails.poll();
 		assertEquals(bodyWithCR, email.getBody());
 	}
 
@@ -158,9 +158,9 @@ public class SimpleSmtpServerTest {
 			}
 		}
 
-		List<SmtpMessage> emails = this.server.getReceivedEmails();
+		Queue<SmtpMessage> emails = this.server.getReceivedEmails();
 		assertThat(emails, hasSize(2));
-		SmtpMessage email = emails.get(0);
+		SmtpMessage email = emails.poll();
 		assertTrue(email.getHeaderValue("Subject").equals("Test"));
 		assertTrue(email.getBody().equals("Test Body"));
 	}

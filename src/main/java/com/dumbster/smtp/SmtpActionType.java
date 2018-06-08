@@ -1,5 +1,6 @@
 /*
  * Dumbster - a dummy SMTP server
+ * Copyright 2018 Christian Meyer
  * Copyright 2016 Joachim Nicolay
  * Copyright 2004 Jason Paul Kitchen
  * 

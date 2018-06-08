@@ -1,5 +1,6 @@
 /*
  * Dumbster - a dummy SMTP server
+ * Copyright 2018 Christian Meyer
  * Copyright 2016 Joachim Nicolay
  * Copyright 2004 Jason Paul Kitchen
  *
@@ -30,8 +31,9 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Queue;
 import java.util.Scanner;
-import java.util.regex.Pattern;
+import java.util.concurrent.ConcurrentLinkedQueue;
 
 /** Dummy SMTP server for testing purposes. */
 @Slf4j
@@ -46,10 +48,13 @@ public final class SimpleSmtpServer implements AutoCloseable {
 	/** When stopping wait this long for any still ongoing transmission */
 	private static final int STOP_TIMEOUT = 20000;
 
-	private static final Pattern CRLF = Pattern.compile("\r\n");
+	private static final String CRLF = "\r\n";
 
-	/** Stores all of the email received since this instance started up. */
-	private final List<SmtpMessage> receivedMail;
+    /**
+     * Store and offer received emails in a {@link Queue} object.
+     * Implementation uses a unbounded and thread-safe {@link ConcurrentLinkedQueue}
+     */
+	private final Queue<SmtpMessage> receivedEmails;
 
 	/** The server socket this server listens to. */
 	private final ServerSocket serverSocket;
@@ -60,6 +65,16 @@ public final class SimpleSmtpServer implements AutoCloseable {
 	/** Indicates the server thread that it should stop */
 	private volatile boolean stopped = false;
 
+    /**
+     * Creates an instance of a started SimpleSmtpServer listening on port {@value SimpleSmtpServer#DEFAULT_SMTP_PORT}.
+     *
+     * @return a reference to the running SMTP server
+     * @throws IOException when listening on the socket causes one
+     */
+    public static SimpleSmtpServer start() throws IOException {
+        return start(DEFAULT_SMTP_PORT);
+    }
+
 	/**
 	 * Creates an instance of a started SimpleSmtpServer.
 	 *
@@ -68,7 +83,7 @@ public final class SimpleSmtpServer implements AutoCloseable {
 	 * @throws IOException when listening on the socket causes one
 	 */
 	public static SimpleSmtpServer start(int port) throws IOException {
-		return new SimpleSmtpServer(new ServerSocket(Math.max(port, 0)));
+		return new SimpleSmtpServer(new ServerSocket(Math.max(port, AUTO_SMTP_PORT)));
 	}
 
 	/**
@@ -77,44 +92,46 @@ public final class SimpleSmtpServer implements AutoCloseable {
 	 * @param serverSocket socket to listen on
 	 */
 	private SimpleSmtpServer(ServerSocket serverSocket) {
-		this.receivedMail = new ArrayList<>();
+        this.receivedEmails = new ConcurrentLinkedQueue<>();
 		this.serverSocket = serverSocket;
-		this.workerThread = new Thread(
-				new Runnable() {
-					@Override
-					public void run() {
-						performWork();
-					}
-				});
+		this.workerThread = new Thread(this::performWork);
 		this.workerThread.start();
 	}
 
-	/**
-	 * @return the port the server is listening on
-	 */
-	public int getPort() {
-		return serverSocket.getLocalPort();
-	}
+    /**
+     * @return the port the server is listening on
+     */
+    public int getPort() {
+        return serverSocket.getLocalPort();
+    }
 
-	/**
-	 * @return list of {@link SmtpMessage}s received by since start up or last reset.
-	 */
-	public List<SmtpMessage> getReceivedEmails() {
-		synchronized (receivedMail) {
-			return Collections.unmodifiableList(new ArrayList<>(receivedMail));
-		}
-	}
+    /**
+     * All received email stored in a thread-safe queue.
+     * The returned object is the backing object of the received data.
+     * Deleting or modifying data in the returned object is a destructive operation.
+     * @return all received email stored in a thread-safe queue
+     */
+    public Queue<SmtpMessage> getReceivedEmails() {
+        return receivedEmails;
+    }
 
-	/**
-	 * forgets all received emails
-	 */
-	public void reset() {
-		synchronized (receivedMail) {
-			receivedMail.clear();
-		}
-	}
+    /**
+     * All received email copied in a {@link ArrayList} to support the original semantics.
+     * Modifying this list does not change the backing queue {@link #getReceivedEmails()}.
+     * @return all received email copied in a Array List
+     */
+    public List<SmtpMessage> getReceivedEmailCopy() {
+        return new ArrayList<>(receivedEmails);
+    }
 
-	/**
+    /**
+     * forgets all received emails
+     */
+    public void reset() {
+        getReceivedEmails().clear();
+    }
+
+    /**
 	 * Stops the server. Server is shutdown after processing of the current request is complete.
 	 */
 	public void stop() {
@@ -149,22 +166,23 @@ public final class SimpleSmtpServer implements AutoCloseable {
 	 * Main loop of the SMTP server.
 	 */
 	private void performWork() {
+        log.info("listening on port " + getPort());
 		try {
 			// Server: loop until stopped
 			while (!stopped) {
 				// Start server socket and listen for client connections
 				//noinspection resource
 				try (Socket socket = serverSocket.accept();
-				     Scanner input = new Scanner(new InputStreamReader(socket.getInputStream(), StandardCharsets.ISO_8859_1)).useDelimiter(CRLF);
-				     PrintWriter out = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.ISO_8859_1));) {
+                     Scanner input = new Scanner(new InputStreamReader(socket.getInputStream(), StandardCharsets.ISO_8859_1)).useDelimiter(CRLF);
+                     PrintWriter out = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), StandardCharsets.ISO_8859_1))) {
 
-					synchronized (receivedMail) {
+                    synchronized (receivedEmails) {
 						/*
-						 * We synchronize over the handle method and the list update because the client call completes inside
-						 * the handle method and we have to prevent the client from reading the list until we've updated it.
+						 * We synchronize over the handle method and the queue update because the client call completes inside
+						 * the handle method and we should prevent the client from reading the list until we've updated it.
 						 */
-						receivedMail.addAll(handleTransaction(out, input));
-					}
+                        receivedEmails.addAll(handleTransaction(out, input));
+                    }
 				}
 			}
 		} catch (Exception e) {
@@ -186,9 +204,8 @@ public final class SimpleSmtpServer implements AutoCloseable {
 	 * @param out   output stream
 	 * @param input input stream
 	 * @return List of SmtpMessage
-	 * @throws IOException
-	 */
-	private static List<SmtpMessage> handleTransaction(PrintWriter out, Iterator<String> input) throws IOException {
+     */
+	private static List<SmtpMessage> handleTransaction(PrintWriter out, Iterator<String> input) {
 		// Initialize the state machine
 		SmtpState smtpState = SmtpState.CONNECT;
 		SmtpRequest smtpRequest = new SmtpRequest(SmtpActionType.CONNECT, "", smtpState);
@@ -206,9 +223,10 @@ public final class SimpleSmtpServer implements AutoCloseable {
 		while (smtpState != SmtpState.CONNECT) {
 			String line = input.next();
 
-			if (line == null) {
+			if (line == null)
 				break;
-			}
+
+            log.debug("client response: {}", line);
 
 			// Create request from client input and current state
 			SmtpRequest request = SmtpRequest.createRequest(line, smtpState);
@@ -230,7 +248,7 @@ public final class SimpleSmtpServer implements AutoCloseable {
 			}
 		}
 
-		return msgList;
+		return Collections.unmodifiableList(msgList);
 	}
 
 	/**
@@ -243,8 +261,12 @@ public final class SimpleSmtpServer implements AutoCloseable {
 		if (smtpResponse.getCode() > 0) {
 			int code = smtpResponse.getCode();
 			String message = smtpResponse.getMessage();
-			out.print(code + " " + message + "\r\n");
+
+            log.debug("Server response: {} {}{}", code, message, CRLF);
+
+            out.print(code + " " + message + CRLF);
 			out.flush();
 		}
 	}
+
 }
