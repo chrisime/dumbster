@@ -1,6 +1,6 @@
 <!--
 	Dumbster - a dummy SMTP server
-	Copyright 2016 Joachim Nicolay
+	Copyright 2018 Christian Meyer
 
 	Licensed under the Apache License, Version 2.0 (the "License");
 	you may not use this file except in compliance with the License.
@@ -20,13 +20,13 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
-	<groupId>com.github.kirviq</groupId>
+	<groupId>com.github.chrisime</groupId>
 	<artifactId>dumbster</artifactId>
 	<version>1.8-SNAPSHOT</version>
 
 	<name>dumbster</name>
 	<description>a simple fake SMTP server for unit testing</description>
-	<url>https://github.com/kirviq/dumbster</url>
+	<url>https://github.com/chrisime/dumbster</url>
 
 	<licenses>
 		<license>
@@ -37,6 +37,10 @@
 	</licenses>
 
 	<developers>
+		<developer>
+			<name>Christian Meyer</name>
+			<url>https://github.com/chrisime</url>
+		</developer>
 		<developer>
 			<name>Joachim Nicolay</name>
 			<url>https://github.com/kirviq</url>
@@ -49,9 +53,9 @@
 	</developers>
 
 	<scm>
-		<connection>scm:git:git@github.com:kirviq/dumbster.git</connection>
-		<developerConnection>scm:git:git@github.com:kirviq/dumbster.git</developerConnection>
-		<url>git@github.com:kirviq/dumbster.git</url>
+		<connection>scm:git:git@github.com:chrisime/dumbster.git</connection>
+		<developerConnection>scm:git:git@github.com:chrisime/dumbster.git</developerConnection>
+		<url>git@github.com:chrisime/dumbster.git</url>
 	</scm>
 
 	<properties>
@@ -63,15 +67,16 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-compiler-plugin</artifactId>
-				<version>3.5.1</version>
+				<version>3.7.0</version>
 				<configuration>
-					<source>1.7</source>
-					<target>1.7</target>
+                    <compilerVersion>1.8</compilerVersion>
+					<source>1.8</source>
+					<target>1.8</target>
 				</configuration>
 			</plugin>
 			<plugin>
 				<artifactId>maven-jar-plugin</artifactId>
-				<version>3.0.2</version>
+				<version>3.1.0</version>
 				<configuration>
 					<archive>
 						<manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
@@ -95,7 +100,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-source-plugin</artifactId>
-				<version>3.0.0</version>
+				<version>3.0.1</version>
 				<executions>
 					<execution>
 						<id>attach-sources</id>
@@ -108,7 +113,7 @@
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-javadoc-plugin</artifactId>
-				<version>2.10.3</version>
+				<version>3.0.1</version>
 				<executions>
 					<execution>
 						<id>attach-javadocs</id>
@@ -125,13 +130,13 @@
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>
-			<version>1.7.18</version>
+			<version>1.7.25</version>
 		</dependency>
 		<!--suppress NonOsgiMavenDependency -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
-			<version>1.16.6</version>
+			<version>1.16.22</version>
 			<scope>provided</scope>
 		</dependency>
 
@@ -156,7 +161,7 @@
 		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-simple</artifactId>
-			<version>1.7.18</version>
+			<version>1.7.25</version>
 			<scope>test</scope>
 		</dependency>
 	</dependencies>
