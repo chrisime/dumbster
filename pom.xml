@@ -1,6 +1,8 @@
 <!--
-	Dumbster - a dummy SMTP server
-	Copyright 2018 Christian Meyer
+    Dumbster - a dummy SMTP server
+    Copyright 2018 Christian Meyer
+    Copyright 2016 Joachim Nicolay
+    Copyright 2004 Jason Paul Kitchen
 
 	Licensed under the Apache License, Version 2.0 (the "License");
 	you may not use this file except in compliance with the License.
@@ -132,7 +134,14 @@
 			<artifactId>slf4j-api</artifactId>
 			<version>1.7.25</version>
 		</dependency>
-		<!--suppress NonOsgiMavenDependency -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.2.3</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!--suppress NonOsgiMavenDependency -->
 		<dependency>
 			<groupId>org.projectlombok</groupId>
 			<artifactId>lombok</artifactId>
@@ -150,12 +159,6 @@
 			<groupId>junit</groupId>
 			<artifactId>junit</artifactId>
 			<version>4.12</version>
-			<scope>test</scope>
-		</dependency>
-		<dependency>
-			<groupId>org.hamcrest</groupId>
-			<artifactId>hamcrest-all</artifactId>
-			<version>1.3</version>
 			<scope>test</scope>
 		</dependency>
 		<dependency>
