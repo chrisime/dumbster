@@ -19,6 +19,8 @@
 
 package com.dumbster.smtp;
 
+import lombok.AllArgsConstructor;
+
 /**
  * Contains an SMTP client request. Handles state transitions using the following state transition table.
  * <PRE>
@@ -43,17 +45,13 @@ package com.dumbster.smtp;
  * noop       | 250/CONNECT | 250/GREET | 250/MAIL  | 250/RCPT     | 250|DATA_HDR  | 250/DATA_BODY | 250/QUIT
  * </PRE>
  */
+@AllArgsConstructor
 class SmtpRequest {
 
     /**
-     * SMTP action received from client.
+     * SMTP action/command received from client.
      */
     private final SmtpActionType action;
-
-    /**
-     * Current state of the SMTP state table.
-     */
-    private final SmtpState state;
 
     /**
      * Additional information passed from the client with the SMTP action.
@@ -61,101 +59,9 @@ class SmtpRequest {
     final String params;
 
     /**
-     * Create a new SMTP client request.
-     *
-     * @param actionType type of action/command
-     * @param params remainder of command line once command is removed
-     * @param state current SMTP server state
+     * Current state of the SMTP state table.
      */
-    SmtpRequest(SmtpActionType actionType, String params, SmtpState state) {
-        this.action = actionType;
-        this.state = state;
-        this.params = params;
-    }
-
-    /**
-     * Execute the SMTP request returning a response. This method models the state transition table for the SMTP server.
-     *
-     * @return reponse to the request
-     */
-    SmtpResponse execute() {
-        SmtpResponse response;
-        if (action.isStateless()) {
-            if (SmtpActionType.EXPN == action || SmtpActionType.VRFY == action) {
-                response = new SmtpResponse(252, "Not supported", this.state);
-            } else if (SmtpActionType.HELP == action) {
-                response = new SmtpResponse(211, "No help available", this.state);
-            } else if (SmtpActionType.NOOP == action) {
-                response = new SmtpResponse(250, "OK", this.state);
-            } else if (SmtpActionType.RSET == action) {
-                response = new SmtpResponse(250, "OK", SmtpState.GREET);
-            } else {
-                response = new SmtpResponse(500, "Command not recognized", this.state);
-            }
-        } else { // Stateful commands
-            if (SmtpActionType.CONNECT == action) {
-                if (SmtpState.CONNECT == state) {
-                    response = new SmtpResponse(220, "localhost Dumbster SMTP service ready", SmtpState.GREET);
-                } else {
-                    response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
-                }
-            } else if (SmtpActionType.EHLO == action) {
-                if (SmtpState.GREET == state) {
-                    response = new SmtpResponse(250, "OK", SmtpState.MAIL);
-                } else {
-                    response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
-                }
-            } else if (SmtpActionType.MAIL == action) {
-                if (SmtpState.MAIL == state || SmtpState.QUIT == state) {
-                    response = new SmtpResponse(250, "OK", SmtpState.RCPT);
-                } else {
-                    response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
-                }
-            } else if (SmtpActionType.RCPT == action) {
-                if (SmtpState.RCPT == state) {
-                    response = new SmtpResponse(250, "OK", this.state);
-                } else {
-                    response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
-                }
-            } else if (SmtpActionType.DATA == action) {
-                if (SmtpState.RCPT == state) {
-                    response = new SmtpResponse(354, "Start mail input; end with <CRLF>.<CRLF>", SmtpState.DATA_HDR);
-                } else {
-                    response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
-                }
-            } else if (SmtpActionType.UNRECOG == action) {
-                if (SmtpState.DATA_HDR == state || SmtpState.DATA_BODY == state) {
-                    response = new SmtpResponse(-1, "", this.state);
-                } else {
-                    response = new SmtpResponse(500, "Command not recognized", this.state);
-                }
-            } else if (SmtpActionType.DATA_END == action) {
-                if (SmtpState.DATA_HDR == state || SmtpState.DATA_BODY == state) {
-                    response = new SmtpResponse(250, "OK", SmtpState.QUIT);
-                } else {
-                    response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
-                }
-            } else if (SmtpActionType.BLANK_LINE == action) {
-                if (SmtpState.DATA_HDR == state) {
-                    response = new SmtpResponse(-1, "", SmtpState.DATA_BODY);
-                } else if (SmtpState.DATA_BODY == state) {
-                    response = new SmtpResponse(-1, "", this.state);
-                } else {
-                    response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
-                }
-            } else if (SmtpActionType.QUIT == action) {
-                if (SmtpState.QUIT == state) {
-                    response = new SmtpResponse(221, "localhost Dumbster service closing transmission channel",
-                                                SmtpState.CONNECT);
-                } else {
-                    response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
-                }
-            } else {
-                response = new SmtpResponse(500, "Command not recognized", this.state);
-            }
-        }
-        return response;
-    }
+    private final SmtpState state;
 
     /**
      * Create an SMTP request object given a line of the input stream from the client and the current internal state.
@@ -183,15 +89,14 @@ class SmtpRequest {
                 action = SmtpActionType.DATA_END;
             } else {
                 action = SmtpActionType.UNRECOG;
-                if (s.length() < 1) {
-                    params = "\n";
-                } else {
-                    params = s;
-                }
+                params = s.length() < 1 ? "\n" : s;
             }
         } else {
             String su = s.toUpperCase();
-            if (su.startsWith("EHLO ") || su.startsWith("HELO")) {
+            if (su.startsWith("HELO ")) {
+                action = SmtpActionType.HELO;
+                params = s.substring(5);
+            } else if (su.startsWith("EHLO ")) {
                 action = SmtpActionType.EHLO;
                 params = s.substring(5);
             } else if (su.startsWith("MAIL FROM:")) {
@@ -220,6 +125,109 @@ class SmtpRequest {
         }
 
         return new SmtpRequest(action, params, state);
+    }
+
+    /**
+     * Execute the SMTP request returning a response. This method models the state transition table for the SMTP server.
+     *
+     * @return reponse to the request
+     */
+    SmtpResponse execute() {
+        SmtpResponse response;
+        if (action.isStateless()) {
+            switch (action) {
+                case EXPN:
+                case VRFY:
+                    response = new SmtpResponse(252, "Not supported", this.state);
+                    break;
+                case HELP:
+                    response = new SmtpResponse(211, "No help available", this.state);
+                    break;
+                case NOOP:
+                    response = new SmtpResponse(250, "OK", this.state);
+                    break;
+                case RSET:
+                    response = new SmtpResponse(250, "OK", SmtpState.GREET);
+                    break;
+                default:
+                    response = new SmtpResponse(500, "Command not recognized", this.state);
+                    break;
+            }
+        } else { // Stateful commands
+            switch (action) {
+                case CONNECT:
+                    if (SmtpState.CONNECT == state) {
+                        response = new SmtpResponse(220, "localhost Dumbster SMTP service ready", SmtpState.GREET);
+                    } else {
+                        response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
+                    }
+                    break;
+                case HELO:
+                    if (SmtpState.GREET == state) {
+                        response = new SmtpResponse(250, "OK", SmtpState.MAIL);
+                    } else {
+                        response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
+                    }
+                    break;
+                case MAIL:
+                    if (SmtpState.MAIL == state || SmtpState.QUIT == state) {
+                        response = new SmtpResponse(250, "OK", SmtpState.RCPT);
+                    } else {
+                        response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
+                    }
+                    break;
+                case RCPT:
+                    if (SmtpState.RCPT == state) {
+                        response = new SmtpResponse(250, "OK", this.state);
+                    } else {
+                        response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
+                    }
+                    break;
+                case DATA:
+                    if (SmtpState.RCPT == state) {
+                        response =
+                            new SmtpResponse(354, "Start mail input; end with <CRLF>.<CRLF>", SmtpState.DATA_HDR);
+                    } else {
+                        response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
+                    }
+                    break;
+                case UNRECOG:
+                    if (SmtpState.DATA_HDR == state || SmtpState.DATA_BODY == state) {
+                        response = new SmtpResponse(-1, "", this.state);
+                    } else {
+                        response = new SmtpResponse(500, "Command not recognized", this.state);
+                    }
+                    break;
+                case DATA_END:
+                    if (SmtpState.DATA_HDR == state || SmtpState.DATA_BODY == state) {
+                        response = new SmtpResponse(250, "OK", SmtpState.QUIT);
+                    } else {
+                        response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
+                    }
+                    break;
+                case BLANK_LINE:
+                    if (SmtpState.DATA_HDR == state) {
+                        response = new SmtpResponse(-1, "", SmtpState.DATA_BODY);
+                    } else if (SmtpState.DATA_BODY == state) {
+                        response = new SmtpResponse(-1, "", this.state);
+                    } else {
+                        response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
+                    }
+                    break;
+                case QUIT:
+                    if (SmtpState.QUIT == state) {
+                        response = new SmtpResponse(221, "localhost Dumbster service closing transmission channel",
+                                                    SmtpState.CONNECT);
+                    } else {
+                        response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
+                    }
+                    break;
+                default:
+                    response = new SmtpResponse(500, "Command not recognized", this.state);
+                    break;
+            }
+        }
+        return response;
     }
 
 }
