@@ -41,6 +41,8 @@ import static java.nio.charset.StandardCharsets.ISO_8859_1;
 @Slf4j
 public final class SimpleSmtpServer implements AutoCloseable {
 
+    private final Object lock = new Object();
+
     /**
      * Default SMTP port is 25.
      */
@@ -259,11 +261,7 @@ public final class SimpleSmtpServer implements AutoCloseable {
                                          .useDelimiter(CRLF);
                      PrintWriter out = new PrintWriter(new OutputStreamWriter(socket.getOutputStream(), ISO_8859_1))) {
 
-                    synchronized (receivedEmails) {
-                        /*
-                         * We synchronize over the handle method and the queue update because the client call completes inside
-                         * the handle method and we should prevent the client from reading the list until we've updated it.
-                         */
+                    synchronized (lock) {
                         handleTransaction(out, input, receivedEmails);
                     }
                 }
