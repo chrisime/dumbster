@@ -30,6 +30,7 @@ import javax.mail.internet.MimeMessage;
 import java.util.Date;
 import java.util.Properties;
 import java.util.Queue;
+import java.util.concurrent.ThreadLocalRandom;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -40,7 +41,7 @@ public class SimpleSmtpServerTest {
 
     @Before
     public void setUp() throws Exception {
-        server = SimpleSmtpServer.start(SimpleSmtpServer.AUTO_SMTP_PORT);
+        server = SimpleSmtpServer.start(SimpleSmtpServer.DEFAULT_SMTP_PORT + ThreadLocalRandom.current().nextInt(1000, 2000));
     }
 
     @After
@@ -56,7 +57,7 @@ public class SimpleSmtpServerTest {
         assertEquals(1, emails.size());
         SmtpMessage email = emails.poll();
         assertEquals("Test", email.getHeaderValue("Subject"));
-        assertEquals("Test Body", email.getBody());
+        assertEquals("Test Body\n", email.getBody());
         assertTrue(email.getHeaderNames().contains("Date"));
         assertTrue(email.getHeaderNames().contains("From"));
         assertTrue(email.getHeaderNames().contains("To"));
@@ -79,32 +80,55 @@ public class SimpleSmtpServerTest {
 
     @Test
     public void testSendMessageWithCR() throws MessagingException {
-        String bodyWithCR = "\n\nKeep these pesky carriage returns\n\n";
+        String bodyWithCR = "\n\nKeep these pesky\ncarriage returns\n\n";
         sendMessage(server.getPort(), "sender@hereagain.com", "CRTest", bodyWithCR, "receivingagain@there.com");
 
         Queue<SmtpMessage> emails = server.getReceivedEmails();
         assertEquals(1, emails.size());
         SmtpMessage email = emails.poll();
-        assertEquals(bodyWithCR, email.getBody());
+        assertEquals(bodyWithCR + "\n", email.getBody());
+    }
+
+    @Test
+	public void testSendMsgWithHeaderContinuation() throws Exception {
+        Properties mailProps = getMailProperties(server.getPort());
+        Session session = Session.getInstance(mailProps, null);
+
+        MimeMessage msg = createMessage(session, "sender@hereagain.com", "receivingagain@there.com",
+                                        "headerWithContinuation", "body");
+        msg.addHeaderLine("X-SomeHeader: first part ");
+        msg.addHeaderLine("    second part");
+        Transport.send(msg);
+
+        Queue<SmtpMessage> emails = server.getReceivedEmails();
+        assertEquals(emails.size(), 1);
+        SmtpMessage email = emails.poll();
+        assertEquals(email.getHeaderValue("X-SomeHeader"), "first part second part");
+        assertEquals(email.getBody(), "body\n");
     }
 
     @Test
     public void testSendTwoMessagesSameConnection() throws MessagingException {
-        MimeMessage[] mimeMessages = new MimeMessage[2];
+        String serverHost = "localhost";
+        String from = "sender@whatever.com";
+        String to = "receiver@home.com";
+
         Properties mailProps = getMailProperties(server.getPort());
         Session session = Session.getInstance(mailProps, null);
 
-        mimeMessages[0] = createMessage(session, "sender@whatever.com", "receiver@home.com", "Doodle1", "Bug1");
-        mimeMessages[1] = createMessage(session, "sender@whatever.com", "receiver@home.com", "Doodle2", "Bug2");
+        MimeMessage[] mimeMessages = new MimeMessage[2];
+        mimeMessages[0] = createMessage(session, from, to, "Doodle1", "Bug1");
+        mimeMessages[1] = createMessage(session, from, to, "Doodle2", "Bug2");
 
         Transport transport = session.getTransport("smtp");
-        transport.connect("localhost", server.getPort(), null, null);
+        transport.connect(serverHost, server.getPort(), null, null);
 
-        for (MimeMessage mimeMessage : mimeMessages) {
-            transport.sendMessage(mimeMessage, mimeMessage.getAllRecipients());
+        try {
+            for (MimeMessage mimeMessage : mimeMessages)
+                transport.sendMessage(mimeMessage, mimeMessage.getAllRecipients());
+        } finally {
+            transport.close();
         }
-
-        transport.close();
 
         assertEquals(2, server.getReceivedEmails().size());
     }
@@ -113,53 +137,50 @@ public class SimpleSmtpServerTest {
     public void testSendTwoMsgsWithLogin() throws Exception {
         String serverHost = "localhost";
         String from = "sender@here.com";
-        String to = "receiver@there.com";
+        String[] to = {"receiver@there.com", "dimiter.bakardjiev@musala.com"};
         String subject = "Test";
         String body = "Test Body";
 
-        Properties props = System.getProperties();
-
-        props.setProperty("mail.smtp.host", serverHost);
+        Properties props = new Properties();
+        props.setProperty("mail.smtp.ehlo", "false");
+        props.setProperty("mail.smtp.auth", "true");
+        props.setProperty("mail.smtp.auth.mechanisms", "PLAIN");
+        props.setProperty("mail.smtp.sendpartial", "true");
+        props.setProperty("mail.smtp.submitter", "user");
 
         Session session = Session.getDefaultInstance(props, null);
+
         Message msg = new MimeMessage(session);
-
-        msg.setFrom(new InternetAddress(from));
-
-        InternetAddress.parse(to, false);
-        msg.setRecipients(Message.RecipientType.TO, InternetAddress.parse(to, false));
+        msg.setFrom(InternetAddress.parse(from, false)[0]);
         msg.setSubject(subject);
-
         msg.setText(body);
         msg.setHeader("X-Mailer", "musala");
         msg.setSentDate(new Date());
         msg.saveChanges();
 
-        Transport transport = null;
-
+        Transport transport = session.getTransport("smtp");
+        transport.connect(serverHost, server.getPort(), "user", "password");
         try {
-            transport = session.getTransport("smtp");
-            transport.connect(serverHost, server.getPort(), "ddd", "ddd");
-            transport.sendMessage(msg, InternetAddress.parse(to, false));
-            transport.sendMessage(msg, InternetAddress.parse("dimiter.bakardjiev@musala.com", false));
+            for (String t : to)
+                transport.sendMessage(msg, InternetAddress.parse(t, false));
         } finally {
-            if (transport != null) {
-                transport.close();
-            }
+            transport.close();
         }
 
         Queue<SmtpMessage> emails = this.server.getReceivedEmails();
         assertEquals(2, emails.size());
         SmtpMessage email = emails.poll();
-        assertEquals("Test", email.getHeaderValue("Subject"));
-        assertEquals("Test Body", email.getBody());
+        assertEquals(subject, email.getHeaderValue("Subject"));
+        assertEquals(body + "\n", email.getBody());
     }
 
     private Properties getMailProperties(int port) {
         Properties mailProps = new Properties();
         mailProps.setProperty("mail.smtp.host", "localhost");
-        mailProps.setProperty("mail.smtp.port", "" + port);
+        mailProps.setProperty("mail.smtp.port", String.valueOf(port));
         mailProps.setProperty("mail.smtp.sendpartial", "true");
+        mailProps.setProperty("mail.smtp.auth", "false");
+        mailProps.setProperty("mail.smtp.ehlo", "false");
         return mailProps;
     }
 
@@ -167,14 +188,14 @@ public class SimpleSmtpServerTest {
     private void sendMessage(int port, String from, String subject, String body, String to) throws MessagingException {
         Properties mailProps = getMailProperties(port);
         Session session = Session.getInstance(mailProps, null);
-        //session.setDebug(true);
+        session.setDebug(true);
 
         MimeMessage msg = createMessage(session, from, to, subject, body);
         Transport.send(msg);
     }
 
-    private MimeMessage createMessage(
-        Session session, String from, String to, String subject, String body) throws MessagingException {
+    private MimeMessage createMessage(Session session, String from, String to, String subject, String body)
+        throws MessagingException {
         MimeMessage msg = new MimeMessage(session);
         msg.setFrom(new InternetAddress(from));
         msg.setSubject(subject);

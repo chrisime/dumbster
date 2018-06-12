@@ -26,45 +26,51 @@ public enum SmtpState {
     /**
      * CONNECT state: waiting for a client connection.
      */
-    CONNECT((byte) 1),
+    CONNECT,
 
     /**
-     * GREET state: wating for a ELHO message.
+     * GREET state: waiting for a ELHO message.
      */
-    GREET((byte) 2),
+    GREET,
+
+    /**
+     * Intermediate state to tell the client about the supported authentications.
+     */
+    GREET_AUTH,
+
+    /**
+     * AUTH PLAIN state: waiting for authentication
+     */
+    AUTH_PLAIN,
+
+    /**
+     * Waiting for the client to enter credentials.
+     */
+    CREDENTIALS,
 
     /**
      * MAIL state: waiting for the MAIL FROM: command.
      */
-    MAIL((byte) 3),
+    MAIL,
 
     /**
      * RCPT state: waiting for a RCPT &lt;email address&gt; command.
      */
-    RCPT((byte) 4),
+    RCPT,
 
     /**
      * DATA_HDR state: waiting for headers.
      */
-    DATA_HDR((byte) 5),
+    DATA_HDR,
 
     /**
      * DATA_BODY state: processing body text.
      */
-    DATA_BODY((byte) 6),
+    DATA_BODY,
 
     /**
      * QUIT state: end of client transmission.
      */
-    QUIT((byte) 7);
-
-    /**
-     * Internal representation of the state.
-     */
-    private byte value;
-
-    SmtpState(byte value) {
-        this.value = value;
-    }
+    QUIT
 
 }

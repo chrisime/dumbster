@@ -74,8 +74,21 @@ class SmtpRequest {
     static SmtpRequest createRequest(String s, SmtpState state) {
         SmtpActionType action;
         String params = null;
+        String su = s.toUpperCase();
 
-        if (state == SmtpState.DATA_HDR) {
+        if (su.startsWith("RSET")) {
+            action = SmtpActionType.RSET;
+        } else if (su.startsWith("QUIT")) {
+            action = SmtpActionType.QUIT;
+        } else if (su.startsWith("NOOP")) {
+            action = SmtpActionType.NOOP;
+        } else if (su.startsWith("EXPN")) {
+            action = SmtpActionType.EXPN;
+        } else if (su.startsWith("VRFY")) {
+            action = SmtpActionType.VRFY;
+        } else if (su.startsWith("HELP")) {
+            action = SmtpActionType.HELP;
+        } else if (state == SmtpState.DATA_HDR) {
             if (s.equals(".")) {
                 action = SmtpActionType.DATA_END;
             } else if (s.length() < 1) {
@@ -89,10 +102,25 @@ class SmtpRequest {
                 action = SmtpActionType.DATA_END;
             } else {
                 action = SmtpActionType.UNRECOG;
-                params = s.length() < 1 ? "\n" : s;
+                params = s;
+            }
+        } else if (state == SmtpState.CREDENTIALS) {
+            if (s.length() == 0) {
+                action = SmtpActionType.AUTH_FAILED;
+            } else {
+                action = SmtpActionType.AUTH_SUCCESS;
+                params = s;
+            }
+        } else if (state == SmtpState.AUTH_PLAIN) {
+            if (su.length() > 10 && su.startsWith("AUTH PLAIN")) {
+                action = SmtpActionType.AUTH_PLAIN_EXT;
+                params = s.substring(11);
+            } else if (su.equals("AUTH PLAIN")) {
+                action = SmtpActionType.AUTH_PLAIN;
+            } else {
+                action = SmtpActionType.AUTH_UNSUPPORTED;
             }
         } else {
-            String su = s.toUpperCase();
             if (su.startsWith("HELO ")) {
                 action = SmtpActionType.HELO;
                 params = s.substring(5);
@@ -107,18 +135,6 @@ class SmtpRequest {
                 params = s.substring(8);
             } else if (su.startsWith("DATA")) {
                 action = SmtpActionType.DATA;
-            } else if (su.startsWith("QUIT")) {
-                action = SmtpActionType.QUIT;
-            } else if (su.startsWith("RSET")) {
-                action = SmtpActionType.RSET;
-            } else if (su.startsWith("NOOP")) {
-                action = SmtpActionType.NOOP;
-            } else if (su.startsWith("EXPN")) {
-                action = SmtpActionType.EXPN;
-            } else if (su.startsWith("VRFY")) {
-                action = SmtpActionType.VRFY;
-            } else if (su.startsWith("HELP")) {
-                action = SmtpActionType.HELP;
             } else {
                 action = SmtpActionType.UNRECOG;
             }
@@ -164,7 +180,42 @@ class SmtpRequest {
                     break;
                 case HELO:
                     if (SmtpState.GREET == state) {
-                        response = new SmtpResponse(250, "OK", SmtpState.MAIL);
+                        response = new SmtpResponse(250, "localhost Hello " + this.params, SmtpState.MAIL);
+                    } else {
+                        response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
+                    }
+                    break;
+                case EHLO:
+                    if (SmtpState.GREET == state) {
+                        response = new SmtpResponse(250, "localhost Hello " + this.params, SmtpState.GREET_AUTH);
+                    } else {
+                        response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
+                    }
+                    break;
+                case AUTH_UNSUPPORTED:
+                    if (SmtpState.AUTH_PLAIN == state) {
+                        response = new SmtpResponse(504, "Unrecognized authentication type.", this.state);
+                    } else {
+                        response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
+                    }
+                    break;
+                case AUTH_PLAIN:
+                    if (SmtpState.AUTH_PLAIN == state) {
+                        response = new SmtpResponse(334, "", SmtpState.CREDENTIALS);
+                    } else {
+                        response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
+                    }
+                    break;
+                case AUTH_PLAIN_EXT:
+                    if (SmtpState.AUTH_PLAIN == state) {
+                        response = new SmtpResponse(235, "2.7.0 Authentication successful", SmtpState.MAIL);
+                    } else {
+                        response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
+                    }
+                    break;
+                case AUTH_SUCCESS:
+                    if (SmtpState.CREDENTIALS == state) {
+                        response = new SmtpResponse(235, "2.7.0 Authentication successful", SmtpState.MAIL);
                     } else {
                         response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
                     }
@@ -186,7 +237,7 @@ class SmtpRequest {
                 case DATA:
                     if (SmtpState.RCPT == state) {
                         response =
-                            new SmtpResponse(354, "Start mail input; end with <CRLF>.<CRLF>", SmtpState.DATA_HDR);
+                            new SmtpResponse(354, "Send message content; end with <CRLF>.<CRLF>", SmtpState.DATA_HDR);
                     } else {
                         response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
                     }
@@ -200,7 +251,7 @@ class SmtpRequest {
                     break;
                 case DATA_END:
                     if (SmtpState.DATA_HDR == state || SmtpState.DATA_BODY == state) {
-                        response = new SmtpResponse(250, "OK", SmtpState.QUIT);
+                        response = new SmtpResponse(250, "Mail delivered.", SmtpState.QUIT);
                     } else {
                         response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
                     }
@@ -215,9 +266,8 @@ class SmtpRequest {
                     }
                     break;
                 case QUIT:
-                    if (SmtpState.QUIT == state) {
-                        response = new SmtpResponse(221, "localhost Dumbster service closing transmission channel",
-                                                    SmtpState.CONNECT);
+                    if (SmtpState.QUIT == state || SmtpState.GREET == state) {
+                        response = new SmtpResponse(221, "Bye", SmtpState.CONNECT);
                     } else {
                         response = new SmtpResponse(503, "Bad sequence of commands: " + action, this.state);
                     }

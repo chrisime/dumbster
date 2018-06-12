@@ -20,32 +20,25 @@ package com.dumbster.smtp;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Container for a complete SMTP message - headers and message body.
  */
 public class SmtpMessage {
 
-    /**
-     * Headers: Map of List of String hashed on header name.
-     */
-    private final Map<String, List<String>> headers;
+    /** Headers: Map of List of String hashed on header name. */
+    private List<Header> headers;
 
-    /**
-     * Message body.
-     */
-    private final StringBuilder body;
+    /** Message body. */
+    private StringBuilder body;
 
-    /**
-     * Constructor. Initializes headers Map and body buffer.
-     */
-    SmtpMessage() {
-        headers = new LinkedHashMap<>(10);
+    /** Constructor. Initializes headers Map and body buffer. */
+    public SmtpMessage() {
+        headers = new ArrayList<>(10);
         body = new StringBuilder();
     }
 
@@ -53,21 +46,26 @@ public class SmtpMessage {
      * Update the headers or body depending on the SmtpResponse object and line of input.
      *
      * @param response SmtpResponse object
-     * @param params remainder of input line after SMTP command has been removed
+     * @param params   remainder of input line after SMTP command has been removed
      */
-    void store(SmtpResponse response, String params) {
+    public void store(SmtpResponse response, String params) {
         if (params == null)
             return;
 
         if (SmtpState.DATA_HDR == response.getNextState()) {
-            int headerNameEnd = params.indexOf(':');
-            if (headerNameEnd >= 0) {
-                String name = params.substring(0, headerNameEnd).trim();
-                String value = params.substring(headerNameEnd + 1).trim();
-                addHeader(name, value);
+            if (params.length() > 0 && Character.isWhitespace(params.charAt(0))) {
+                appendToLastHeader(params);
+            } else {
+                int headerNameEnd = params.indexOf(':');
+                if (headerNameEnd >= 0) {
+                    String name = params.substring(0, headerNameEnd).trim();
+                    String value = params.substring(headerNameEnd + 1).trim();
+                    addHeader(name, value);
+                }
             }
         } else if (SmtpState.DATA_BODY == response.getNextState()) {
             body.append(params);
+            body.append('\n');
         }
     }
 
@@ -77,31 +75,34 @@ public class SmtpMessage {
      * @return an Iterator over the set of header names (String)
      */
     public Set<String> getHeaderNames() {
-        return Collections.unmodifiableSet(new LinkedHashSet<>(headers.keySet()));
+        return headers.stream()
+                      .map(header -> header.name)
+                      .collect(Collectors.toCollection(() -> new LinkedHashSet<>(headers.size())));
     }
 
     /**
      * Get the value(s) associated with the given header name.
      *
      * @param name header name
-     *
      * @return value(s) associated with the header name
      */
     public List<String> getHeaderValues(String name) {
-        List<String> values = headers.get(name);
-        return values == null || values.isEmpty() ? Collections.emptyList() : Collections.unmodifiableList(values);
+        return headers.stream()
+                      .filter(header -> header.name.equals(name))
+                      .findFirst()
+                      .map(header -> Collections.unmodifiableList(header.values))
+                      .orElse(Collections.emptyList());
     }
 
     /**
      * Get the first values associated with a given header name.
      *
      * @param name header name
-     *
      * @return first value associated with the header name
      */
     public String getHeaderValue(String name) {
-        List<String> values = headers.get(name);
-        return values == null ? null : values.get(0);
+        List<String> values = getHeaderValues(name);
+        return values.isEmpty() ? null : values.get(0);
     }
 
     /**
@@ -116,31 +117,52 @@ public class SmtpMessage {
     /**
      * Adds a header to the Map.
      *
-     * @param name header name
+     * @param name  header name
      * @param value header value
      */
     private void addHeader(String name, String value) {
-        headers.computeIfAbsent(name, k -> new ArrayList<>(1)).add(value);
+        headers.stream()
+               .filter(header -> header.name.equals(name))
+               .findFirst()
+               .map(header -> header.values.add(value))
+               .orElseGet(() -> {
+                   Header h = new Header();
+                   h.name = name;
+                   h.values = new ArrayList<>(1);
+                   headers.add(h);
+                   h.values.add(value);
+                   return null;
+               });
     }
 
-    /**
-     * String representation of the SmtpMessage.
-     */
+    private void appendToLastHeader(String value) {
+        if (headers.isEmpty()) {
+            throw new IllegalStateException("found continuation line before first header");
+        } else {
+            Header header = headers.get(headers.size() - 1);
+            String lastValue = header.values.get(header.values.size() - 1);
+            String newValue = lastValue + " " + value.trim();
+            header.values.set(header.values.size() - 1, newValue);
+        }
+    }
+
     @Override
     public String toString() {
         StringBuilder msg = new StringBuilder();
-        for (Map.Entry<String, List<String>> stringListEntry : headers.entrySet()) {
-            for (String value : stringListEntry.getValue()) {
-                msg.append(stringListEntry.getKey());
+        for (Header header : headers) {
+            for (String value : header.values) {
+                msg.append(header.name);
                 msg.append(": ");
                 msg.append(value);
                 msg.append('\n');
             }
         }
-        msg.append('\n');
-        msg.append(body);
-        msg.append('\n');
-        return msg.toString();
+        return msg.append('\n').append(body).append('\n').toString();
+    }
+
+    private static final class Header {
+        String name;
+        List<String> values;
     }
 
 }

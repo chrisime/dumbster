@@ -39,6 +39,31 @@ enum SmtpActionType {
     EHLO(false),
 
     /**
+     * AUTH PLAIN action.
+     */
+    AUTH_PLAIN(false),
+
+    /**
+     * AUTH PLAIN with user/password action.
+     */
+    AUTH_PLAIN_EXT(false),
+
+    /**
+     * AUTH SUCCESS action.
+     */
+    AUTH_SUCCESS(false),
+
+    /**
+     * AUTH FAILED action.
+     */
+    AUTH_FAILED(false),
+
+    /**
+     * AUTH UNSUPPORTED action.
+     */
+    AUTH_UNSUPPORTED(false),
+
+    /**
      * MAIL FROM action.
      */
     MAIL(false),

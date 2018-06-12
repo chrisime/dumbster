@@ -27,7 +27,6 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Queue;
@@ -55,7 +54,7 @@ public final class SimpleSmtpServer implements AutoCloseable {
     /**
      * When stopping wait this long for any still ongoing transmission
      */
-    private static final int STOP_TIMEOUT = 20000;
+    private static final int STOP_TIMEOUT = 20_000;
 
     private static final String CRLF = "\r\n";
 
@@ -122,22 +121,19 @@ public final class SimpleSmtpServer implements AutoCloseable {
      *
      * @param out output stream
      * @param input input stream
-     *
-     * @return List of SmtpMessage
+     * @param queue list of SmtpMessage
      */
-    private static List<SmtpMessage> handleTransaction(PrintWriter out, Iterator<String> input) {
+    private static void handleTransaction(PrintWriter out, Iterator<String> input, Queue<SmtpMessage> queue) {
         // Initialize the state machine
-        SmtpState smtpState = SmtpState.CONNECT;
-        SmtpRequest smtpRequest = new SmtpRequest(SmtpActionType.CONNECT, "", smtpState);
+        SmtpRequest smtpRequest = new SmtpRequest(SmtpActionType.CONNECT, "", SmtpState.CONNECT);
 
         // Execute the connection request
         SmtpResponse smtpResponse = smtpRequest.execute();
 
         // Send initial response
         sendResponse(out, smtpResponse);
-        smtpState = smtpResponse.getNextState();
 
-        List<SmtpMessage> msgList = new ArrayList<>();
+        SmtpState smtpState = smtpResponse.getNextState();
         SmtpMessage msg = new SmtpMessage();
 
         while (smtpState != SmtpState.CONNECT) {
@@ -146,7 +142,7 @@ public final class SimpleSmtpServer implements AutoCloseable {
             if (line == null)
                 break;
 
-            log.debug("client response: {}", line);
+            log.debug("C: {}", line);
 
             // Create request from client input and current state
             SmtpRequest request = SmtpRequest.createRequest(line, smtpState);
@@ -161,12 +157,17 @@ public final class SimpleSmtpServer implements AutoCloseable {
 
             // If message reception is complete save it
             if (smtpState == SmtpState.QUIT) {
-                msgList.add(msg);
+                queue.add(msg);
                 msg = new SmtpMessage();
+            } else if (smtpState == SmtpState.GREET) {
+                queue.clear();
+                msg = new SmtpMessage();
+            } else if (smtpState == SmtpState.GREET_AUTH) {
+                out.print("250-AUTH PLAIN" + CRLF);
+                smtpState = SmtpState.AUTH_PLAIN;
             }
         }
 
-        return Collections.unmodifiableList(msgList);
     }
 
     /**
@@ -180,7 +181,7 @@ public final class SimpleSmtpServer implements AutoCloseable {
         if (code > 0) {
             String message = smtpResponse.getMessage();
 
-            log.debug("Server response: {} {}{}", code, message, CRLF);
+            log.debug("S: {} {}{}", code, message, CRLF);
 
             out.print(code + " " + message + CRLF);
             out.flush();
@@ -250,7 +251,7 @@ public final class SimpleSmtpServer implements AutoCloseable {
      * Main loop of the SMTP server.
      */
     private void performWork() {
-        log.info("listening on port " + serverSocket.getLocalPort());
+        log.info("server listening on port {}", serverSocket.getLocalPort());
         try {
             while (!stopped) { // Server: loop until stopped
                 try (Socket socket = serverSocket.accept();
@@ -263,7 +264,7 @@ public final class SimpleSmtpServer implements AutoCloseable {
                          * We synchronize over the handle method and the queue update because the client call completes inside
                          * the handle method and we should prevent the client from reading the list until we've updated it.
                          */
-                        receivedEmails.addAll(handleTransaction(out, input));
+                        handleTransaction(out, input, receivedEmails);
                     }
                 }
             }
